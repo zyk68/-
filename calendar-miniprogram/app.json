@@ -1,0 +1,18 @@
+{
+  "pages": [
+    "pages/index/index",
+    "pages/preview/preview",
+    "pages/customize/customize",
+    "pages/tutorial/tutorial"
+  ],
+  "window": {
+    "navigationBarBackgroundColor": "#667eea",
+    "navigationBarTitleText": "日历订阅工具",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#667eea",
+    "backgroundTextStyle": "light"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json",
+  "lazyCodeLoading": "requiredComponents"
+}

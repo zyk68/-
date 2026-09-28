@@ -1,0 +1,108 @@
+name: Generate & Deploy Calendar
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # 每天北京时间凌晨2点运行 (UTC 18:00)
+    - cron: '0 18 * * *'
+  workflow_dispatch:  # 允许手动触发
+    inputs:
+      years:
+        description: '生成年份范围 (例如: 2024-2027)'
+        required: false
+        default: ''
+      force_generate:
+        description: '强制重新生成所有文件'
+        required: false
+        default: 'false'
+        type: boolean
+
+# 设置 GITHUB_TOKEN 的权限
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+# 允许一个并发部署
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci --production
+      
+      - name: Generate ICS files
+        run: |
+          echo "🏭 开始生成日历文件..."
+          if [ -n "${{ github.event.inputs.years }}" ]; then
+            node src/index.js --years ${{ github.event.inputs.years }}
+          else
+            node src/index.js
+          fi
+          echo "📦 合并生成 all-in-one.ics..."
+          node src/index.js --merge
+          echo "✅ 生成完成"
+          ls -lh output/
+      
+      - name: Generate index.html (with cache info)
+        env:
+          GITHUB_REPOSITORY_OWNER: ${{ github.repository_owner }}
+          GITHUB_REPOSITORY_NAME: ${{ github.event.repository.name }}
+        run: |
+          TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          node src/generate-index.js output "${GITHUB_REPOSITORY_OWNER}" "${GITHUB_REPOSITORY_NAME}" "${TIMESTAMP}"
+          echo "✅ index.html 已更新"
+      
+      - name: Commit and push generated files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # 在 remote URL 中嵌入 GITHUB_TOKEN 以允许 push
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          
+          # 只提交 output/（含 index.html）
+          git add output/
+          
+          if git diff --staged --quiet; then
+            echo "📋 没有文件变化，跳过提交"
+          else
+            git commit -m "chore: 自动更新生成的日历文件 [skip ci]"
+            git push origin main
+            echo "✅ 文件已推送回仓库"
+          fi
+      
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+      
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: ./output
+      
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
